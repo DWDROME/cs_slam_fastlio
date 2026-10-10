@@ -32,16 +32,16 @@ FAST-LIO2 → RViz
 
 ### 游戏侧：[cs16_sensors_udp.sma](cs16_sensors_udp.sma)
 
-- **虚拟 LiDAR：**通过 `trace_line` 对场景碰撞几何进行多线射线扫描，可配置扫描线数、角分辨率和扫描间隔。
-- **虚拟 IMU：**根据玩家姿态与运动状态生成四元数、角速度和线加速度，结合滤波与限幅处理。
-- **坐标转换：**在 GoldSrc 世界坐标与机器人机体系之间变换，将游戏单位统一换算为米。
-- **UDP 传输：**批量打包点云，以 `FRAME_BEGIN` / `FRAME_END` 标记帧边界；IMU 使用独立端口发送。
+- **虚拟 LiDAR**：通过 `trace_line` 对场景碰撞几何进行多线射线扫描，可配置扫描线数、角分辨率和扫描间隔。
+- **虚拟 IMU**：根据玩家姿态与运动状态生成四元数、角速度和线加速度，结合滤波与限幅处理。
+- **坐标转换**：在 GoldSrc 世界坐标与机器人机体系之间变换，将游戏单位统一换算为米。
+- **UDP 传输**：批量打包点云，以 `FRAME_BEGIN` / `FRAME_END` 标记帧边界；IMU 使用独立端口发送。
 
 ### ROS 侧：[cs_udp_sensors_bridge.py](cs_udp_sensors_bridge.py)
 
-- **标准消息：**发布 `sensor_msgs/PointCloud2` 与 `sensor_msgs/Imu`，供 ROS 工具及建图进程使用。
-- **点云适配：**采用 XYZIRT 字段布局，保留 `ring`、`time` 等信息。
-- **接收处理：**支持帧组装、异常数据统计、距离过滤和可选的超时发布。
+- **标准消息**：发布 `sensor_msgs/PointCloud2` 与 `sensor_msgs/Imu`，供 ROS 工具及建图进程使用。
+- **点云适配**：采用 XYZIRT 字段布局，保留 `ring`、`time` 等信息。
+- **接收处理**：支持帧组装、异常数据统计、距离过滤和可选的超时发布。
 
 ## 默认配置
 
