@@ -6,42 +6,35 @@
 
 *演示视频约 2:13 处截图：左侧为 CS1.6 场景与桥接终端，右侧为 RViz 中的建图结果。点击图片观看视频。*
 
+本项目在《Counter-Strike 1.6》的 GoldSrc 引擎中实现虚拟 LiDAR 与 IMU，通过 UDP 将游戏场景中的传感器数据实时传输至 ROS Noetic，并接入 FAST-LIO2 进行建图联调与可视化。
+
+不同于传统的 Gazebo 仿真环境，这里直接利用游戏引擎已有的地图几何、碰撞检测和玩家运动状态，构建了一条从虚拟场景到机器人感知算法的完整数据通路。
+
 [**▶ 观看建图演示（Bilibili）**](https://www.bilibili.com/video/BV1hYpWztEcS/) · [复现与技术说明](docs/technical-notes.md)
-
-本项目在《Counter-Strike 1.6》的 GoldSrc 引擎中实现虚拟 LiDAR 与 IMU，通过 UDP 将传感器数据实时传输至 ROS Noetic，并接入 FAST-LIO2 进行建图联调与可视化。
-
-利用游戏引擎已有的地图几何、碰撞检测和玩家运动状态，构建从游戏场景到机器人感知算法的完整数据通路。
 
 ## 系统架构
 
-```text
-CS1.6 / GoldSrc
-  └─ AMX Mod X：虚拟 LiDAR + IMU
-          │ UDP：点云 9999 / IMU 10000
-          ▼
-ROS Noetic：cs_udp_sensors_bridge.py
-  ├─ sensor_msgs/PointCloud2 → /velodyne_points
-  └─ sensor_msgs/Imu         → /cs/imu
-          ▼
-FAST-LIO2 → RViz
-```
+**CS1.6 / GoldSrc → 虚拟传感器 → UDP → ROS Noetic → FAST-LIO2 → RViz**
 
-系统分为游戏侧传感器插件与 ROS 侧桥接程序；FAST-LIO2 单独配置接入。
+系统分为两个主要部分：
 
-## 核心实现
+**游戏侧：`cs16_sensors_udp.sma`**
 
-### 游戏侧：[cs16_sensors_udp.sma](cs16_sensors_udp.sma)
+基于 AMX Mod X 实现传感器模拟：
 
-- **虚拟 LiDAR**：通过 `trace_line` 对场景碰撞几何进行多线射线扫描，可配置扫描线数、角分辨率和扫描间隔。
-- **虚拟 IMU**：根据玩家姿态与运动状态生成四元数、角速度和线加速度，结合滤波与限幅处理。
-- **坐标转换**：在 GoldSrc 世界坐标与机器人机体系之间变换，将游戏单位统一换算为米。
-- **UDP 传输**：批量打包点云，以 `FRAME_BEGIN` / `FRAME_END` 标记帧边界；IMU 使用独立端口发送。
+- **虚拟 LiDAR**：利用 `trace_line` 对场景碰撞几何进行射线扫描，生成多线激光点云，支持扫描线数、角分辨率与采样间隔配置；量程通过源码常量设置。
+- **虚拟 IMU**：根据玩家姿态和运动状态生成四元数、角速度与线加速度，并进行滤波与限幅处理。
+- **坐标转换**：处理 GoldSrc 世界坐标与机器人机体系之间的转换，将游戏单位统一换算为米。
+- **数据传输**：通过 UDP 分帧发送点云与 IMU 数据，支持点云批量打包与帧边界标记。
 
-### ROS 侧：[cs_udp_sensors_bridge.py](cs_udp_sensors_bridge.py)
+**ROS 侧：`cs_udp_sensors_bridge.py`**
 
-- **标准消息**：发布 `sensor_msgs/PointCloud2` 与 `sensor_msgs/Imu`，供 ROS 工具及建图进程使用。
-- **点云适配**：采用 XYZIRT 字段布局，保留 `ring`、`time` 等信息。
-- **接收处理**：支持帧组装、异常数据统计、距离过滤和可选的超时发布。
+负责接收、解析与发布标准 ROS 消息：
+
+- 将虚拟点云转换为 `sensor_msgs/PointCloud2`，发布至 `/velodyne_points`。
+- 保留 `ring`、`time` 等字段，采用 XYZIRT 点云布局，便于适配 LiDAR 建图算法。
+- 将模拟惯性数据转换为 `sensor_msgs/Imu`，发布至 `/cs/imu`。
+- 支持帧组装、异常数据统计、距离过滤及可选的超时发布。
 
 ## 默认配置
 
@@ -50,30 +43,24 @@ FAST-LIO2 → RViz
 | LiDAR 扫描线数 | 32 |
 | 水平角分辨率 | 2° |
 | 扫描间隔 | 0.07 s |
-| 最大量程（源码常量） | 50 m |
+| 最大量程 | 50 m |
 | IMU 采样率配置 | 100 Hz |
-| 点云 / IMU UDP 端口 | 9999 / 10000 |
-| 点云 / IMU topic | `/velodyne_points` / `/cs/imu` |
+| 点云 UDP 端口 | 9999 |
+| IMU UDP 端口 | 10000 |
 | ROS 发行版 | Noetic |
 
-扫描间隔与 IMU 采样率为调度配置值。
+上述数值为插件默认配置，不代表独立测得的实际采样性能。
 
-## 从游戏场景到建图输入
+## 建图演示与工程价值
 
-这个项目将射线扫描、姿态与运动状态估算、坐标系约定、UDP 分帧和 ROS 消息适配串联起来，让 CS1.6 地图成为可以接入机器人 SLAM 系统的虚拟环境。
+通过该系统，可以直接利用 CS1.6 地图生成虚拟点云与惯性数据，并在 ROS 中观察传感器输出及 FAST-LIO2 建图效果。
 
-工程中的主要工作包括：
+这个项目的重点并非重新实现 SLAM 算法，而是探索如何将非机器人仿真平台转换为可用的算法测试输入环境。
 
-- 将游戏碰撞结果转换成具有米制尺度与机体系约定的多线点云。
-- 为建图输入组织 `ring`、帧内时间与模拟惯性数据。
-- 打通游戏端、网络接收、ROS 发布与 FAST-LIO2 / RViz 的联调链路。
-
-## 复现入口
-
-准备 CS1.6 + AMX Mod X 与 ROS Noetic，设置游戏插件的接收端 IP，加载插件并运行桥接脚本，再接入自己的 FAST-LIO2 配置。
-
-具体的依赖、启动命令、坐标与时间约定、常见问题见 [复现与技术说明](docs/technical-notes.md)。输入由游戏实时生成，无需额外下载 rosbag 或数据集。
+其中涉及的坐标系约定、传感器消息适配、点云时间字段、UDP 数据传输与调试流程，也属于机器人感知系统集成中的实际工程问题。
 
 ## 项目定位
 
-本仓库提供游戏侧传感器插件与 ROS 桥接程序，FAST-LIO2 为外部建图组件。虚拟传感器采用简化模型，适合数据通路调试、算法接入探索与建图演示；模型及时间处理约定见[技术说明](docs/technical-notes.md#仿真与时间约定)。
+本仓库提供游戏侧传感器插件与 ROS 桥接程序。FAST-LIO2 为外部建图组件，需要单独配置。
+
+虚拟 IMU 和 LiDAR 采用简化的传感器模型，适用于数据通路调试、算法接入探索与建图效果演示，不作为高保真传感器仿真或精度评测基准。
